@@ -17,13 +17,8 @@ Disallow: /private
     );
   });
 
-  it("defaults to allowed when robots parser returns null/undefined", () => {
-    const robotsTxt = `
-User-agent: *
-Allow: /
-`;
-    const robots = robotsParser("https://example.com/robots.txt", robotsTxt);
-    expect(isUrlAllowedByRobots("https://example.com/", robots)).toBe(true);
+  it("defaults to allowed when no robots checker is available", () => {
+    expect(isUrlAllowedByRobots("https://example.com/", null)).toBe(true);
   });
 });
 

@@ -27,11 +27,13 @@ export function getFirecrawlUserAgent(): string {
 
 function ensureToken(ua: string): string {
   const trimmed = ua.trim();
-  if (trimmed.length === 0) return getFirecrawlUserAgent();
-  if (trimmed.toLowerCase().includes(FIRECRAWL_USER_AGENT_TOKEN.toLowerCase())) {
-    return trimmed;
+  const base = trimmed.length === 0 ? getFirecrawlUserAgent().trim() : trimmed;
+
+  if (base.toLowerCase().includes(FIRECRAWL_USER_AGENT_TOKEN.toLowerCase())) {
+    return base;
   }
-  return `${trimmed} ${FIRECRAWL_USER_AGENT_TOKEN}`;
+
+  return `${base} ${FIRECRAWL_USER_AGENT_TOKEN}`;
 }
 
 function headersToRecord(
