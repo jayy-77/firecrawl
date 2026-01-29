@@ -139,6 +139,7 @@ const configSchema = z.object({
   WEBHOOK_USE_RABBITMQ: z.stringbool().optional(),
 
   // Firecrawl Features
+  FIRECRAWL_USER_AGENT: z.string().optional(),
   FIRECRAWL_DEBUG_FILTER_LINKS: z.stringbool().optional(),
   FIRECRAWL_LOG_TO_FILE: z.stringbool().optional(),
   FIRECRAWL_SAVE_MOCKS: z.stringbool().optional(),

@@ -13,6 +13,7 @@ import { v7 as uuid } from "uuid";
 import * as undici from "undici";
 import { getSecureDispatcher } from "./safeFetch";
 import { logger } from "../../../../lib/logger";
+import { withFirecrawlUserAgent } from "../../../../lib/firecrawl-user-agent";
 
 const mapUndiciError = (url: string, skipTlsVerification: boolean, e: any) => {
   const code = e?.code ?? e?.cause?.code ?? e?.errno ?? e?.name;
@@ -68,6 +69,7 @@ export async function fetchFileToBuffer(
     const response = await undici.fetch(url, {
       ...init,
       redirect: "follow",
+      headers: withFirecrawlUserAgent(init?.headers as any),
       dispatcher: getSecureDispatcher(skipTlsVerification),
     });
     return {
@@ -97,6 +99,7 @@ export async function downloadFile(
     const response = await undici.fetch(url, {
       ...init,
       redirect: "follow",
+      headers: withFirecrawlUserAgent(init?.headers as any),
       dispatcher: getSecureDispatcher(skipTlsVerification),
     });
 

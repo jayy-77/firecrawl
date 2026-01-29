@@ -9,6 +9,7 @@ import {
 } from "../utils/safeFetch";
 import { MockState, saveMock } from "../../lib/mock";
 import { TextDecoder } from "util";
+import { withFirecrawlUserAgent } from "../../../../lib/firecrawl-user-agent";
 
 export async function scrapeURLWithFetch(
   meta: Meta,
@@ -54,7 +55,7 @@ export async function scrapeURLWithFetch(
       const x = await undici.fetch(meta.rewrittenUrl ?? meta.url, {
         dispatcher: getSecureDispatcher(meta.options.skipTlsVerification),
         redirect: "follow",
-        headers: meta.options.headers,
+        headers: withFirecrawlUserAgent(meta.options.headers),
         signal: meta.abort.asSignal(),
       });
 

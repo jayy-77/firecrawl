@@ -1,4 +1,3 @@
-import robotsParser, { Robot } from "robots-parser";
 import { config } from "../config";
 import { Logger } from "winston";
 import { ScrapeOptions, scrapeOptions } from "../controllers/v2/types";
@@ -13,11 +12,8 @@ const useFireEngine =
   config.FIRE_ENGINE_BETA_URL !== "" &&
   config.FIRE_ENGINE_BETA_URL !== undefined;
 
-interface RobotsTxtChecker {
-  robotsTxtUrl: string;
-  robotsTxt: string;
-  robots: Robot;
-}
+export { createRobotsChecker, isUrlAllowedByRobots } from "./robots-policy";
+export type { RobotsTxtChecker } from "./robots-policy";
 
 export async function fetchRobotsTxt(
   {
@@ -118,60 +114,6 @@ export async function fetchRobotsTxt(
   };
 }
 
-export function createRobotsChecker(
-  url: string,
-  robotsTxt: string,
-): RobotsTxtChecker {
-  const urlObj = new URL(url);
-  const robotsTxtUrl = `${urlObj.protocol}//${urlObj.host}/robots.txt`;
-  const robots = robotsParser(robotsTxtUrl, robotsTxt);
-  return {
-    robotsTxtUrl,
-    robotsTxt,
-    robots,
-  };
-}
-
-export function isUrlAllowedByRobots(
-  url: string,
-  robots: Robot | null,
-  userAgents: string[] = ["FireCrawlAgent", "FirecrawlAgent"],
-): boolean {
-  if (!robots) return true;
-
-  for (const userAgent of userAgents) {
-    let isAllowed = robots.isAllowed(url, userAgent);
-
-    // Handle null/undefined responses - default to true (allowed)
-    if (isAllowed === null || isAllowed === undefined) {
-      isAllowed = true;
-    }
-
-    if (isAllowed == null) {
-      isAllowed = true;
-    }
-
-    // Also check with trailing slash if URL doesn't have one
-    // This catches cases like "Disallow: /path/" when user requests "/path"
-    if (isAllowed && !url.endsWith("/")) {
-      const urlWithSlash = url + "/";
-      let isAllowedWithSlash = robots.isAllowed(urlWithSlash, userAgent);
-
-      if (isAllowedWithSlash == null) {
-        isAllowedWithSlash = true;
-      }
-
-      // If the trailing slash version is explicitly disallowed, block it
-      if (isAllowedWithSlash === false) {
-        isAllowed = false;
-      }
-    }
-
-    if (isAllowed) {
-      //   console.log("isAllowed: true, " + userAgent);
-      return true;
-    }
-  }
-
-  return false;
-}
+// `createRobotsChecker` and `isUrlAllowedByRobots` intentionally live in
+// `robots-policy.ts` so the pure robots logic can be tested without needing to
+// import the entire scrapeURL pipeline (which pulls in native deps).

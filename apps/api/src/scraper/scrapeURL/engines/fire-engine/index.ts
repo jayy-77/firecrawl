@@ -34,6 +34,7 @@ import { AbortManagerThrownError } from "../../lib/abortManager";
 import { youtubePostprocessor } from "../../postprocessors/youtube";
 import { withSpan, setSpanAttributes } from "../../../../lib/otel-tracer";
 import { getBrandingScript } from "./brandingScript";
+import { withFirecrawlUserAgent } from "../../../../lib/firecrawl-user-agent";
 
 // This function does not take `Meta` on purpose. It may not access any
 // meta values to construct the request -- that must be done by the
@@ -300,7 +301,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
       engine: "chrome-cdp",
       instantReturn: false,
       skipTlsVerification: meta.options.skipTlsVerification,
-      headers: meta.options.headers,
+      headers: withFirecrawlUserAgent(meta.options.headers),
       ...(actions.length > 0
         ? {
             actions,
@@ -437,7 +438,7 @@ export async function scrapeURLWithFireEnginePlaywright(
       engine: "playwright",
       instantReturn: false,
 
-      headers: meta.options.headers,
+      headers: withFirecrawlUserAgent(meta.options.headers),
       priority: meta.internalOptions.priority,
       screenshot:
         hasFormatOfType(meta.options.formats, "screenshot") !== undefined,
@@ -512,7 +513,7 @@ export async function scrapeURLWithFireEngineTLSClient(
       engine: "tlsclient",
       instantReturn: false,
 
-      headers: meta.options.headers,
+      headers: withFirecrawlUserAgent(meta.options.headers),
       priority: meta.internalOptions.priority,
 
       atsv: meta.internalOptions.atsv,

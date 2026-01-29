@@ -1,5 +1,6 @@
 import * as undici from "undici";
 import { getSecureDispatcher } from "../scraper/scrapeURL/engines/utils/safeFetch";
+import { withFirecrawlUserAgent } from "./firecrawl-user-agent";
 
 export const protocolIncluded = (url: string) => {
   // if :// not in the start of the url assume http (maybe https?)
@@ -211,6 +212,7 @@ export async function resolveRedirects(
         method,
         redirect: "follow",
         dispatcher: getSecureDispatcher(false),
+        headers: withFirecrawlUserAgent(undefined),
         signal,
       });
 
