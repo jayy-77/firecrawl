@@ -6,6 +6,7 @@ import { logger as _logger } from "./logger";
 import { getAdjustedMaxDepth } from "../scraper/WebScraper/utils/maxDepthUtils";
 import type { Logger } from "winston";
 import { withSpan, setSpanAttributes } from "./otel-tracer";
+import { stripUrlUserInfo } from "./url-sanitization";
 
 export type StoredCrawl = {
   originUrl?: string;
@@ -298,7 +299,7 @@ export async function getCrawlQualifiedJobCount(id: string): Promise<number> {
 }
 
 export function normalizeURL(url: string, sc: StoredCrawl): string {
-  const urlO = new URL(url);
+  const urlO = new URL(stripUrlUserInfo(url));
   if (sc && sc.crawlerOptions && sc.crawlerOptions.ignoreQueryParameters) {
     urlO.search = "";
   }
@@ -328,6 +329,9 @@ export function normalizeURL(url: string, sc: StoredCrawl): string {
 // - mogery
 export function generateURLPermutations(url: string | URL): URL[] {
   const urlO = new URL(url);
+  // Ensure any userinfo doesn't leak into permutations/dedupe keys.
+  urlO.password = "";
+  urlO.username = "";
 
   // Construct two versions, one with www., one without
   const urlWithWWW = new URL(urlO);

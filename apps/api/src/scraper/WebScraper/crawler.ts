@@ -8,6 +8,7 @@ import { getURLDepth } from "./utils/maxDepthUtils";
 import { logger as _logger } from "../../lib/logger";
 import { redisEvictConnection } from "../../services/redis";
 import { extractLinks } from "@mendable/firecrawl-rs";
+import { normalizeUrl } from "../../lib/canonical-url";
 import {
   fetchRobotsTxt,
   createRobotsChecker,
@@ -15,6 +16,7 @@ import {
 } from "../../lib/robots-txt";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import { ScrapeOptions } from "../../controllers/v2/types";
+import { stripUrlUserInfo } from "../../lib/url-sanitization";
 import { filterLinks, filterUrl } from "@mendable/firecrawl-rs";
 
 export const SITEMAP_LIMIT = 25;
@@ -260,10 +262,11 @@ export class WebCrawler {
         }
       }
 
-      return {
-        links: res.links,
-        denialReasons: fancyDenialReasons,
-      };
+      const uniqueSanitizedLinks = [
+        ...new Set(res.links.map(link => stripUrlUserInfo(link))),
+      ].slice(0, limit);
+
+      return { links: uniqueSanitizedLinks, denialReasons: fancyDenialReasons };
     } catch (error) {
       this.logger.error("Error filtering links in Rust, falling back to JS", {
         error,
@@ -436,7 +439,11 @@ export class WebCrawler {
       })
       .slice(0, limit);
 
-    return { links: filteredLinks, denialReasons };
+    const uniqueSanitizedLinks = [
+      ...new Set(filteredLinks.map(link => stripUrlUserInfo(link))),
+    ].slice(0, limit);
+
+    return { links: uniqueSanitizedLinks, denialReasons };
   }
 
   public async getRobotsTxt(
@@ -518,14 +525,6 @@ export class WebCrawler {
       method: "tryGetSitemap",
     });
     let leftOfLimit = this.limit;
-
-    const normalizeUrl = (url: string) => {
-      url = url.replace(/^https?:\/\//, "").replace(/^www\./, "");
-      if (url.endsWith("/")) {
-        url = url.slice(0, -1);
-      }
-      return url;
-    };
 
     const _urlsHandler = async (urls: string[]) => {
       this.logger.debug("urlsHandler invoked");
@@ -619,7 +618,7 @@ export class WebCrawler {
             normalizeUrl(this.initialUrl),
           )
         ) {
-          urlsHandler([this.initialUrl]);
+          urlsHandler([stripUrlUserInfo(this.initialUrl)]);
         }
         count++;
       }
@@ -648,7 +647,7 @@ export class WebCrawler {
   }
 
   public async filterURL(href: string, url: string): Promise<FilterResult> {
-    return await filterUrl({
+    const res = await filterUrl({
       href: href,
       url: url,
       baseUrl: this.baseUrl,
@@ -658,6 +657,15 @@ export class WebCrawler {
       allowExternalContentLinks: this.allowExternalContentLinks,
       allowSubdomains: this.allowSubdomains,
     });
+
+    if (res.allowed && res.url) {
+      const sanitized = stripUrlUserInfo(res.url);
+      if (sanitized !== res.url) {
+        return { ...res, url: sanitized };
+      }
+    }
+
+    return res;
   }
 
   private async extractLinksFromHTMLRust(html: string, url: string) {

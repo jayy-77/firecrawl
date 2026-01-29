@@ -48,6 +48,12 @@ describe("normalizeUrlOnlyHostname", () => {
     const expected = "dev.blog.example.com";
     expect(normalizeUrlOnlyHostname(url)).toBe(expected);
   });
+
+  it("should strip username/password userinfo from hostname", () => {
+    const url = "https://user:pass@www.example.com/path/to/resource";
+    const expected = "example.com";
+    expect(normalizeUrlOnlyHostname(url)).toBe(expected);
+  });
 });
 
 describe("normalizeUrl", () => {
@@ -96,6 +102,12 @@ describe("normalizeUrl", () => {
   it("should handle invalid URLs gracefully", () => {
     const url = "not a valid url";
     const expected = "not a valid url";
+    expect(normalizeUrl(url)).toBe(expected);
+  });
+
+  it("should strip username/password userinfo from the authority", () => {
+    const url = "https://user:pass@www.example.com/path/";
+    const expected = "example.com/path";
     expect(normalizeUrl(url)).toBe(expected);
   });
 });
