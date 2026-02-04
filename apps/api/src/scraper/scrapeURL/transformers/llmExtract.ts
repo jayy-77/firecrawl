@@ -18,6 +18,7 @@ import {
   jsonSchema,
 } from "ai";
 import { getModel } from "../../../lib/generic-ai";
+import { extractJsonFromText } from "../../../lib/json-extraction";
 import { z } from "zod";
 import fs from "fs/promises";
 import Ajv from "ajv";
@@ -861,31 +862,194 @@ export async function generateCompletions({
         }
       } else if (NoObjectGeneratedError.isInstance(error)) {
         logger.warn("No object generated", { error });
-        if (
-          error.text &&
-          error.text.startsWith("```json") &&
-          error?.text.endsWith("```")
-        ) {
+        // Some providers/models return a plain-text JSON response instead of calling tools.
+        // If we can salvage JSON from the response text, do so.
+        if (typeof (error as any).text === "string" && (error as any).text) {
+          const extracted = extractJsonFromText((error as any).text);
+          if (extracted.ok) {
+            try {
+              if (schema instanceof z.ZodType) {
+                const parsedResult = schema.safeParse(extracted.value);
+                if (!parsedResult.success) {
+                  throw new Error(parsedResult.error.message);
+                }
+                extract = parsedResult.data;
+              } else if (schema) {
+                const ajv = new Ajv({ allErrors: true, strict: false });
+                const validate = ajv.compile(schema);
+                if (!validate(extracted.value)) {
+                  throw new Error(ajv.errorsText(validate.errors));
+                }
+                extract = extracted.value;
+              } else {
+                extract = extracted.value;
+              }
+
+              result = {
+                object: extract,
+                usage: {
+                  inputTokens: (error as any).usage?.inputTokens ?? 0,
+                  outputTokens: (error as any).usage?.outputTokens ?? 0,
+                  totalTokens: (error as any).usage?.totalTokens ?? 0,
+                },
+              };
+            } catch (validationError) {
+              lastError = validationError as Error;
+              logger.debug("Salvaged JSON did not match schema; falling back", {
+                error: lastError.message,
+              });
+            }
+          }
+        }
+
+        if (!result && schema) {
+          // Tool-calling failed and we couldn't salvage a JSON payload. Fall back to a strict
+          // JSON-only generation and validate against the schema locally.
+          const schemaForPrompt =
+            schema instanceof z.ZodType ? undefined : JSON.stringify(schema);
+          if (!schemaForPrompt) {
+            throw lastError;
+          }
+
+          const fallbackSystem =
+            (options.systemPrompt ? options.systemPrompt + "\n\n" : "") +
+            "Return ONLY a valid JSON value. Do not use Markdown code fences. Do not include any explanation.";
+          const fallbackPrompt = `${prompt}\n\nJSON Schema:\n${schemaForPrompt}\n\nReturn a single JSON value that matches the schema exactly.`;
+
           try {
-            extract = JSON.parse(
-              error.text.slice("```json".length, -"```".length).trim(),
-            );
+            const fallback = await generateText({
+              model: currentModel,
+              prompt: fallbackPrompt,
+              system: fallbackSystem,
+              providerOptions: {
+                anthropic: {
+                  thinking: { type: "enabled", budgetTokens: 12000 },
+                },
+                google: {
+                  labels: {
+                    teamId: metadata.teamId,
+                    functionId: metadata.functionId ?? "unspecified",
+                    extractId: metadata.extractId ?? "unspecified",
+                    scrapeId: metadata.scrapeId ?? "unspecified",
+                    deepResearchId: metadata.deepResearchId ?? "unspecified",
+                    llmsTxtId: metadata.llmsTxtId ?? "unspecified",
+                  },
+                },
+                openai: {
+                  strictJsonSchema: true,
+                },
+              },
+              experimental_telemetry: {
+                isEnabled: true,
+                functionId: metadata.functionId
+                  ? metadata.functionId + "/generateText/fallbackJson"
+                  : "generateText/fallbackJson",
+                metadata: {
+                  teamId: metadata.teamId,
+                  ...(metadata.extractId
+                    ? {
+                        langfuseTraceId: "extract:" + metadata.extractId,
+                        extractId: metadata.extractId,
+                      }
+                    : {}),
+                  ...(metadata.scrapeId
+                    ? {
+                        langfuseTraceId: "scrape:" + metadata.scrapeId,
+                        scrapeId: metadata.scrapeId,
+                      }
+                    : {}),
+                  ...(metadata.deepResearchId
+                    ? {
+                        langfuseTraceId:
+                          "deepResearch:" + metadata.deepResearchId,
+                        deepResearchId: metadata.deepResearchId,
+                      }
+                    : {}),
+                  ...(metadata.llmsTxtId
+                    ? {
+                        langfuseTraceId: "llmsTxt:" + metadata.llmsTxtId,
+                        llmsTxtId: metadata.llmsTxtId,
+                      }
+                    : {}),
+                },
+              },
+            });
+
+            costTrackingOptions.costTracking.addCall({
+              type: "other",
+              metadata: {
+                ...costTrackingOptions.metadata,
+                gcDetails: "generateText fallbackJson",
+                gcModel:
+                  typeof currentModel === "string"
+                    ? currentModel
+                    : currentModel.modelId,
+              },
+              tokens: {
+                input: fallback.usage?.inputTokens ?? 0,
+                output: fallback.usage?.outputTokens ?? 0,
+              },
+              model: modelId,
+              cost: calculateCost(
+                modelId,
+                fallback.usage?.inputTokens ?? 0,
+                fallback.usage?.outputTokens ?? 0,
+              ),
+            });
+
+            const extracted = extractJsonFromText(fallback.text);
+            let parsed = extracted.ok ? extracted.value : undefined;
+            if (!parsed) {
+              const repairedText = await repairConfig.experimental_repairText({
+                text: extracted.jsonText ?? fallback.text,
+                error: new Error("Failed to parse JSON from fallback text"),
+              });
+              const repaired = extractJsonFromText(repairedText);
+              if (!repaired.ok) {
+                throw new Error("Failed to parse JSON even after repair");
+              }
+              parsed = repaired.value;
+            }
+
+            if (schema instanceof z.ZodType) {
+              const parsedResult = schema.safeParse(parsed);
+              if (!parsedResult.success) {
+                throw new Error(
+                  "Fallback JSON did not match Zod schema: " +
+                    parsedResult.error.message,
+                );
+              }
+              extract = parsedResult.data;
+            } else {
+              const ajv = new Ajv({ allErrors: true, strict: false });
+              const validate = ajv.compile(schema);
+              if (!validate(parsed)) {
+                throw new Error(
+                  "Fallback JSON did not match schema: " +
+                    ajv.errorsText(validate.errors),
+                );
+              }
+              extract = parsed;
+            }
+
             result = {
               object: extract,
               usage: {
-                inputTokens: error.usage?.inputTokens ?? 0,
-                outputTokens: error.usage?.outputTokens ?? 0,
-                totalTokens: error.usage?.totalTokens ?? 0,
+                inputTokens: fallback.usage?.inputTokens ?? 0,
+                outputTokens: fallback.usage?.outputTokens ?? 0,
+                totalTokens: fallback.usage?.totalTokens ?? 0,
               },
             };
-          } catch (parseError) {
-            lastError = parseError as Error;
-            logger.error("Failed to parse JSON from error text", {
+          } catch (fallbackError) {
+            lastError = fallbackError as Error;
+            logger.error("Fallback JSON-only extraction failed", {
               error: lastError.message,
             });
             throw lastError;
           }
-        } else {
+        }
+
+        if (!result) {
           throw lastError;
         }
       } else {

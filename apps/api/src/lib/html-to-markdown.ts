@@ -7,9 +7,53 @@ import type { Logger } from "winston";
 import { stat } from "fs/promises";
 import { HTML_TO_MARKDOWN_PATH } from "../natives";
 import { convertHTMLToMarkdownWithHttpService } from "./html-to-markdown-client";
-import { postProcessMarkdown } from "@mendable/firecrawl-rs";
 
 // TODO: add a timeout to the Go parser
+
+let postProcessMarkdownFn:
+  | ((markdown: string) => Promise<string>)
+  | undefined = undefined;
+let postProcessMarkdownLoadAttempted = false;
+
+async function postProcessMarkdownSafe(
+  markdown: string,
+  contextLogger: Logger,
+  requestId?: string,
+): Promise<string> {
+  if (!postProcessMarkdownLoadAttempted) {
+    postProcessMarkdownLoadAttempted = true;
+    try {
+      const mod = require("@mendable/firecrawl-rs") as {
+        postProcessMarkdown?: (markdown: string) => string | Promise<string>;
+      };
+      if (typeof mod.postProcessMarkdown === "function") {
+        postProcessMarkdownFn = async (md: string) =>
+          await mod.postProcessMarkdown!(md);
+      } else {
+        contextLogger.warn(
+          "firecrawl-rs postProcessMarkdown missing; skipping post-processing",
+          { ...(requestId ? { request_id: requestId } : {}) },
+        );
+      }
+    } catch (error) {
+      contextLogger.warn(
+        "firecrawl-rs not available; skipping post-processing",
+        { ...(requestId ? { request_id: requestId } : {}), error },
+      );
+    }
+  }
+
+  if (!postProcessMarkdownFn) return markdown;
+  try {
+    return await postProcessMarkdownFn(markdown);
+  } catch (error) {
+    contextLogger.warn(
+      "firecrawl-rs postProcessMarkdown failed; returning unprocessed markdown",
+      { ...(requestId ? { request_id: requestId } : {}), error },
+    );
+    return markdown;
+  }
+}
 
 class GoMarkdownConverter {
   private static instance: GoMarkdownConverter;
@@ -72,7 +116,11 @@ export async function parseMarkdown(
         logger: contextLogger,
         requestId,
       });
-      markdownContent = await postProcessMarkdown(markdownContent);
+      markdownContent = await postProcessMarkdownSafe(
+        markdownContent,
+        contextLogger,
+        requestId,
+      );
       return markdownContent;
     } catch (error) {
       contextLogger.error(
@@ -92,7 +140,11 @@ export async function parseMarkdown(
     if (config.USE_GO_MARKDOWN_PARSER) {
       const converter = await GoMarkdownConverter.getInstance();
       let markdownContent = await converter.convertHTMLToMarkdown(html);
-      markdownContent = await postProcessMarkdown(markdownContent);
+      markdownContent = await postProcessMarkdownSafe(
+        markdownContent,
+        contextLogger,
+        requestId,
+      );
       return markdownContent;
     }
   } catch (error) {
@@ -140,7 +192,11 @@ export async function parseMarkdown(
 
   try {
     let markdownContent = await turndownService.turndown(html);
-    markdownContent = await postProcessMarkdown(markdownContent);
+    markdownContent = await postProcessMarkdownSafe(
+      markdownContent,
+      contextLogger,
+      requestId,
+    );
 
     return markdownContent;
   } catch (error) {

@@ -379,6 +379,7 @@ export async function extractData({
       error,
     });
     // console.log("failed during extractSmartScrape.ts:generateCompletions", error);
+    throw error;
   }
 
   let extractedData = extract?.extractedData;
