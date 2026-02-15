@@ -3,6 +3,7 @@ import { chromium, Browser, BrowserContext, Route, Request as PlaywrightRequest,
 import dotenv from 'dotenv';
 import UserAgent from 'user-agents';
 import { getError } from './helpers/get_error';
+import { extractUserAgentAndSanitizeHeaders } from './helpers/headers';
 
 dotenv.config();
 
@@ -78,6 +79,7 @@ interface UrlModel {
   wait_after_load?: number;
   timeout?: number;
   headers?: { [key: string]: string };
+  user_agent?: string;
   check_selector?: string;
   skip_tls_verification?: boolean;
 }
@@ -99,8 +101,10 @@ const initializeBrowser = async () => {
   });
 };
 
-const createContext = async (skipTlsVerification: boolean = false) => {
-  const userAgent = new UserAgent().toString();
+const createContext = async (skipTlsVerification: boolean = false, requestedUserAgent?: string) => {
+  const userAgent = requestedUserAgent?.trim()
+    ? requestedUserAgent.trim()
+    : new UserAgent().toString();
   const viewport = { width: 1280, height: 800 };
 
   const contextOptions: any = {
@@ -219,7 +223,15 @@ app.get('/health', async (req: Request, res: Response) => {
 });
 
 app.post('/scrape', async (req: Request, res: Response) => {
-  const { url, wait_after_load = 0, timeout = 15000, headers, check_selector, skip_tls_verification = false }: UrlModel = req.body;
+  const {
+    url,
+    wait_after_load = 0,
+    timeout = 15000,
+    headers,
+    user_agent,
+    check_selector,
+    skip_tls_verification = false,
+  }: UrlModel = req.body;
 
   console.log(`================= Scrape Request =================`);
   console.log(`URL: ${url}`);
@@ -252,11 +264,14 @@ app.post('/scrape', async (req: Request, res: Response) => {
   let page: Page | null = null;
 
   try {
-    requestContext = await createContext(skip_tls_verification);
+    const { userAgent: requestedUserAgent, headers: extraHeaders } =
+      extractUserAgentAndSanitizeHeaders(headers, user_agent);
+
+    requestContext = await createContext(skip_tls_verification, requestedUserAgent);
     page = await requestContext.newPage();
 
-    if (headers) {
-      await page.setExtraHTTPHeaders(headers);
+    if (extraHeaders) {
+      await page.setExtraHTTPHeaders(extraHeaders);
     }
 
     const result = await scrapePage(page, url, 'load', wait_after_load, timeout, check_selector);

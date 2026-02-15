@@ -5,9 +5,32 @@ import { Meta } from "../..";
 import { robustFetch } from "../../lib/fetch";
 import { getInnerJson } from "@mendable/firecrawl-rs";
 
+function splitUserAgent(headers?: Record<string, string>): {
+  userAgent?: string;
+  headers?: Record<string, string>;
+} {
+  if (!headers) return {};
+
+  let userAgent: string | undefined;
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === "user-agent") {
+      if (value.trim()) userAgent = value.trim();
+      continue;
+    }
+    out[key] = value;
+  }
+
+  return {
+    userAgent,
+    headers: Object.keys(out).length > 0 ? out : undefined,
+  };
+}
+
 export async function scrapeURLWithPlaywright(
   meta: Meta,
 ): Promise<EngineScrapeResult> {
+  const { userAgent, headers } = splitUserAgent(meta.options.headers);
   const response = await robustFetch({
     url: config.PLAYWRIGHT_MICROSERVICE_URL!,
     headers: {
@@ -17,7 +40,8 @@ export async function scrapeURLWithPlaywright(
       url: meta.rewrittenUrl ?? meta.url,
       wait_after_load: meta.options.waitFor,
       timeout: meta.abort.scrapeTimeout(),
-      headers: meta.options.headers,
+      ...(headers ? { headers } : {}),
+      ...(userAgent ? { user_agent: userAgent } : {}),
       skip_tls_verification: meta.options.skipTlsVerification,
     },
     method: "POST",
