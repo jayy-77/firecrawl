@@ -9,11 +9,11 @@ import {
 import { crawlToCrawler, StoredCrawl } from "./crawl-redis";
 import {
   checkAndUpdateURLForMap,
-  getHostnameWithoutWww,
   isSameDomain,
   isSameSubdomain,
   resolveRedirects,
 } from "./validateUrl";
+import { buildFireEngineMapQuery } from "./map-query";
 import { fireEngineMap } from "../search/fireEngine";
 import { redisEvictConnection } from "../services/redis";
 import {
@@ -193,13 +193,11 @@ export async function getMapResults({
         .filter(x => x !== null) as MapDocument[];
     }
   } else {
-    const siteTarget = getHostnameWithoutWww(url);
-    const mapUrl =
-      search && allowExternalLinks
-        ? `${search} ${siteTarget}`
-        : search
-          ? `${search} site:${siteTarget}`
-          : `site:${siteTarget}`;
+    const mapUrl = buildFireEngineMapQuery({
+      url,
+      search,
+      allowExternalLinks,
+    });
 
     const resultsPerPage = 100;
     const maxPages = Math.ceil(

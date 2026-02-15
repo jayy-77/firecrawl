@@ -13,11 +13,11 @@ import { MapResponse, MapRequest, MAX_MAP_LIMIT } from "./types";
 import { configDotenv } from "dotenv";
 import {
   checkAndUpdateURLForMap,
-  getHostnameWithoutWww,
   isSameDomain,
   isSameSubdomain,
   removeDuplicateUrls,
 } from "../../lib/validateUrl";
+import { buildFireEngineMapQuery } from "../../lib/map-query";
 import { fireEngineMap } from "../../search/fireEngine";
 import { billTeam } from "../../services/billing/credit_billing";
 import { logMap, logRequest } from "../../services/logging/log_job";
@@ -181,14 +181,11 @@ export async function getMapResults({
       // links = links.slice(1, limit); // don't slice, unnecessary
     }
   } else {
-    const siteTarget = getHostnameWithoutWww(url);
-
-    const mapUrl =
-      search && allowExternalLinks
-        ? `${search} ${siteTarget}`
-        : search
-          ? `${search} site:${siteTarget}`
-          : `site:${siteTarget}`;
+    const mapUrl = buildFireEngineMapQuery({
+      url,
+      search,
+      allowExternalLinks,
+    });
 
     const resultsPerPage = 100;
     const maxPages = Math.ceil(
