@@ -4,33 +4,12 @@ import { EngineScrapeResult } from "..";
 import { Meta } from "../..";
 import { robustFetch } from "../../lib/fetch";
 import { getInnerJson } from "@mendable/firecrawl-rs";
-
-function splitUserAgent(headers?: Record<string, string>): {
-  userAgent?: string;
-  headers?: Record<string, string>;
-} {
-  if (!headers) return {};
-
-  let userAgent: string | undefined;
-  const out: Record<string, string> = {};
-  for (const [key, value] of Object.entries(headers)) {
-    if (key.toLowerCase() === "user-agent") {
-      if (value.trim()) userAgent = value.trim();
-      continue;
-    }
-    out[key] = value;
-  }
-
-  return {
-    userAgent,
-    headers: Object.keys(out).length > 0 ? out : undefined,
-  };
-}
+import { splitUserAgentFromHeaders } from "./userAgent";
 
 export async function scrapeURLWithPlaywright(
   meta: Meta,
 ): Promise<EngineScrapeResult> {
-  const { userAgent, headers } = splitUserAgent(meta.options.headers);
+  const { userAgent, headers } = splitUserAgentFromHeaders(meta.options.headers);
   const response = await robustFetch({
     url: config.PLAYWRIGHT_MICROSERVICE_URL!,
     headers: {
