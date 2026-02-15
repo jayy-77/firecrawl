@@ -19,6 +19,25 @@ const getURLobj = (s: string) => {
   return { error, urlObj };
 };
 
+/**
+ * Extract the hostname from a URL and strip a leading `www.` prefix.
+ *
+ * This is used for building search queries (e.g. `site:`) where `www` variants
+ * can produce empty results even when the apex domain is indexed.
+ */
+export function getHostnameWithoutWww(inputUrl: string): string {
+  try {
+    const target = protocolIncluded(inputUrl) ? inputUrl : `http://${inputUrl}`;
+    const urlObj = new URL(target);
+    return urlObj.hostname.replace(/^www\./i, "");
+  } catch {
+    return inputUrl
+      .replace(/^https?:\/\//i, "")
+      .replace(/^www\./i, "")
+      .split(/[/?#]/)[0]!;
+  }
+}
+
 export const checkAndUpdateURL = (url: string) => {
   if (!protocolIncluded(url)) {
     url = `http://${url}`;

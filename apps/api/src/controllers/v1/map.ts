@@ -13,6 +13,7 @@ import { MapResponse, MapRequest, MAX_MAP_LIMIT } from "./types";
 import { configDotenv } from "dotenv";
 import {
   checkAndUpdateURLForMap,
+  getHostnameWithoutWww,
   isSameDomain,
   isSameSubdomain,
   removeDuplicateUrls,
@@ -180,14 +181,14 @@ export async function getMapResults({
       // links = links.slice(1, limit); // don't slice, unnecessary
     }
   } else {
-    let urlWithoutWww = url.replace("www.", "");
+    const siteTarget = getHostnameWithoutWww(url);
 
-    let mapUrl =
+    const mapUrl =
       search && allowExternalLinks
-        ? `${search} ${urlWithoutWww}`
+        ? `${search} ${siteTarget}`
         : search
-          ? `${search} site:${urlWithoutWww}`
-          : `site:${url}`;
+          ? `${search} site:${siteTarget}`
+          : `site:${siteTarget}`;
 
     const resultsPerPage = 100;
     const maxPages = Math.ceil(

@@ -9,6 +9,7 @@ import {
 import { crawlToCrawler, StoredCrawl } from "./crawl-redis";
 import {
   checkAndUpdateURLForMap,
+  getHostnameWithoutWww,
   isSameDomain,
   isSameSubdomain,
   resolveRedirects,
@@ -192,13 +193,13 @@ export async function getMapResults({
         .filter(x => x !== null) as MapDocument[];
     }
   } else {
-    let urlWithoutWww = url.replace("www.", "");
-    let mapUrl =
+    const siteTarget = getHostnameWithoutWww(url);
+    const mapUrl =
       search && allowExternalLinks
-        ? `${search} ${urlWithoutWww}`
+        ? `${search} ${siteTarget}`
         : search
-          ? `${search} site:${urlWithoutWww}`
-          : `site:${url}`;
+          ? `${search} site:${siteTarget}`
+          : `site:${siteTarget}`;
 
     const resultsPerPage = 100;
     const maxPages = Math.ceil(
