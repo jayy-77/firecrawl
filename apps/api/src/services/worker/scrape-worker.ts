@@ -44,6 +44,7 @@ import { CustomError } from "../../lib/custom-error";
 import { startWebScraperPipeline } from "../../main/runWebScraper";
 import { CostTracking } from "../../lib/cost-tracking";
 import { normalizeUrlOnlyHostname } from "../../lib/canonical-url";
+import { stripUrlUserInfo } from "../../lib/url-utils";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { UNSUPPORTED_SITE_MESSAGE } from "../../lib/strings";
 import { generateURLSplits, queryIndexAtSplitLevel } from "../index";
@@ -374,7 +375,8 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
             }
 
             for (const link of links.links) {
-              if (await lockURL(job.data.crawl_id, sc, link)) {
+              const normalizedLink = stripUrlUserInfo(link);
+              if (await lockURL(job.data.crawl_id, sc, normalizedLink)) {
                 // This seems to work really welel
                 const jobPriority = await getJobPriority({
                   team_id: sc.team_id,
@@ -386,13 +388,13 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
                   "Determined job priority " +
                     jobPriority +
                     " for URL " +
-                    JSON.stringify(link),
-                  { jobPriority, url: link },
+                    JSON.stringify(normalizedLink),
+                  { jobPriority, url: normalizedLink },
                 );
 
                 await addScrapeJob(
                   {
-                    url: link,
+                    url: normalizedLink,
                     mode: "single_urls",
                     team_id: sc.team_id,
                     scrapeOptions: scrapeOptions.parse(sc.scrapeOptions),
@@ -417,9 +419,9 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
                 );
 
                 await addCrawlJob(job.data.crawl_id, jobId, logger);
-                logger.debug("Added job for URL " + JSON.stringify(link), {
+                logger.debug("Added job for URL " + JSON.stringify(normalizedLink), {
                   jobPriority,
-                  url: link,
+                  url: normalizedLink,
                   newJobId: jobId,
                 });
               } else {
@@ -1018,7 +1020,7 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
         sc.crawlerOptions.maxDepth ?? 10,
         false,
       )
-    ).links;
+    ).links.map(stripUrlUserInfo);
 
     if (passingURLs.length > 0) {
       logger.debug("Using urls of length " + passingURLs.length, {
