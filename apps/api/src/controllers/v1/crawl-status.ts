@@ -175,12 +175,24 @@ export async function crawlStatusController(
       ? start + parseInt(req.query.limit, 10) - 1
       : undefined;
 
-  const group = await crawlGroup.getGroup(req.params.jobId);
-  const groupAnyJob = await scrapeQueue.getGroupAnyJob(
+  let group = await crawlGroup.getGroup(req.params.jobId);
+  const groupAnyJob = await scrapeQueue.getGroupAnyJobInModes(
     req.params.jobId,
     req.auth.team_id,
+    ["single_urls", "kickoff", "kickoff_sitemap"],
   );
   const sc = await getCrawl(req.params.jobId);
+
+  // Best-effort backfill: ensure the group exists for immediate status queries,
+  // even before `single_urls` jobs are enqueued.
+  if (!group && (groupAnyJob || (sc && sc.team_id === req.auth.team_id))) {
+    try {
+      await crawlGroup.addGroup(req.params.jobId, req.auth.team_id);
+    } catch {
+      // Ignore duplicate/constraint errors; we'll re-read below.
+    }
+    group = await crawlGroup.getGroup(req.params.jobId);
+  }
 
   if (!group || (!groupAnyJob && (!sc || sc.team_id !== req.auth.team_id))) {
     return res.status(404).json({ success: false, error: "Job not found" });

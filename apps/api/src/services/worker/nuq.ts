@@ -586,6 +586,21 @@ class NuQ<JobData = any, JobReturnValue = any> {
     groupId: string,
     ownerId: string,
   ): Promise<NuQJob<JobData, JobReturnValue> | null> {
+    return await this.getGroupAnyJobInModes(groupId, ownerId, ["single_urls"]);
+  }
+
+  /**
+   * Returns any job in a group for a given owner, constrained to specific modes.
+   *
+   * Used for cases where we need to prove group ownership immediately after
+   * crawl creation, before any `single_urls` jobs are enqueued (e.g. during
+   * the `kickoff` phase).
+   */
+  public async getGroupAnyJobInModes(
+    groupId: string,
+    ownerId: string,
+    modes: string[],
+  ): Promise<NuQJob<JobData, JobReturnValue> | null> {
     return this.rowToJob(
       (
         await nuqPool.query(
@@ -594,10 +609,10 @@ class NuQ<JobData = any, JobReturnValue = any> {
             FROM ${this.queueName}
             WHERE ${this.queueName}.group_id = $1
               AND ${this.queueName}.owner_id = $2
-              AND ${this.queueName}.data->>'mode' = 'single_urls'
+              AND (${this.queueName}.data->>'mode') = ANY($3::text[])
             LIMIT 1;
           `,
-          [groupId, normalizeOwnerId(ownerId)],
+          [groupId, normalizeOwnerId(ownerId), modes],
         )
       ).rows[0],
     );
