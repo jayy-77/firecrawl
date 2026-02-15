@@ -22,6 +22,7 @@ import { configDotenv } from "dotenv";
 import { logger } from "../../lib/logger";
 import { supabase_rr_service, supabase_service } from "../../services/supabase";
 import { getJobFromGCS } from "../../lib/gcs-jobs";
+import { getCrawlStatusAuthContext } from "../../lib/crawl-status-auth";
 import {
   scrapeQueue,
   NuQJob,
@@ -175,26 +176,17 @@ export async function crawlStatusController(
       ? start + parseInt(req.query.limit, 10) - 1
       : undefined;
 
-  let group = await crawlGroup.getGroup(req.params.jobId);
-  const groupAnyJob = await scrapeQueue.getGroupAnyJobInModes(
-    req.params.jobId,
-    req.auth.team_id,
-    ["single_urls", "kickoff", "kickoff_sitemap"],
+  const { group, groupAnyJob, sc, authorized } = await getCrawlStatusAuthContext(
+    {
+      crawlId: req.params.jobId,
+      teamId: req.auth.team_id,
+      crawlGroup,
+      scrapeQueue,
+      getCrawl,
+    },
   );
-  const sc = await getCrawl(req.params.jobId);
 
-  // Best-effort backfill: ensure the group exists for immediate status queries,
-  // even before `single_urls` jobs are enqueued.
-  if (!group && (groupAnyJob || (sc && sc.team_id === req.auth.team_id))) {
-    try {
-      await crawlGroup.addGroup(req.params.jobId, req.auth.team_id);
-    } catch {
-      // Ignore duplicate/constraint errors; we'll re-read below.
-    }
-    group = await crawlGroup.getGroup(req.params.jobId);
-  }
-
-  if (!group || (!groupAnyJob && (!sc || sc.team_id !== req.auth.team_id))) {
+  if (!authorized) {
     return res.status(404).json({ success: false, error: "Job not found" });
   }
 
