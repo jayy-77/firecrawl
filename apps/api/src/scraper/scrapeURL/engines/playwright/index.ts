@@ -8,6 +8,9 @@ import { getInnerJson } from "@mendable/firecrawl-rs";
 export async function scrapeURLWithPlaywright(
   meta: Meta,
 ): Promise<EngineScrapeResult> {
+  // Check if stealth mode is enabled via feature flags (set by engine selection)
+  const useStealth = meta.featureFlags.has("stealthProxy");
+
   const response = await robustFetch({
     url: config.PLAYWRIGHT_MICROSERVICE_URL!,
     headers: {
@@ -19,6 +22,7 @@ export async function scrapeURLWithPlaywright(
       timeout: meta.abort.scrapeTimeout(),
       headers: meta.options.headers,
       skip_tls_verification: meta.options.skipTlsVerification,
+      stealth: useStealth,
     },
     method: "POST",
     logger: meta.logger.child("scrapeURLWithPlaywright/robustFetch"),
@@ -43,7 +47,7 @@ export async function scrapeURLWithPlaywright(
     error: response.pageError,
     contentType: response.contentType,
 
-    proxyUsed: "basic",
+    proxyUsed: useStealth ? "stealth" : "basic",
   };
 }
 

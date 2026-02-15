@@ -80,6 +80,7 @@ interface UrlModel {
   headers?: { [key: string]: string };
   check_selector?: string;
   skip_tls_verification?: boolean;
+  stealth?: boolean; // Enable anti-bot detection evasion
 }
 
 let browser: Browser;
@@ -99,7 +100,7 @@ const initializeBrowser = async () => {
   });
 };
 
-const createContext = async (skipTlsVerification: boolean = false) => {
+const createContext = async (skipTlsVerification: boolean = false, enableStealth: boolean = false) => {
   const userAgent = new UserAgent().toString();
   const viewport = { width: 1280, height: 800 };
 
@@ -107,7 +108,22 @@ const createContext = async (skipTlsVerification: boolean = false) => {
     userAgent,
     viewport,
     ignoreHTTPSErrors: skipTlsVerification,
+    bypassCSP: enableStealth, // Bypass Content Security Policy when in stealth mode
   };
+
+  // Add more realistic browser headers for stealth mode
+  if (enableStealth) {
+    contextOptions.extraHTTPHeaders = {
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+      'Sec-Fetch-Site': 'none',
+      'Sec-Fetch-Mode': 'navigate',
+      'Sec-Fetch-User': '?1',
+      'Sec-Fetch-Dest': 'document',
+      'Upgrade-Insecure-Requests': '1',
+    };
+  }
 
   if (PROXY_SERVER && PROXY_USERNAME && PROXY_PASSWORD) {
     contextOptions.proxy = {
@@ -122,6 +138,64 @@ const createContext = async (skipTlsVerification: boolean = false) => {
   }
 
   const newContext = await browser.newContext(contextOptions);
+
+  // Apply stealth scripts to hide automation markers
+  if (enableStealth) {
+    await newContext.addInitScript(() => {
+      // Hide webdriver property
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => false,
+      });
+
+      // Mock plugins to appear as a real browser
+      Object.defineProperty(navigator, 'plugins', {
+        get: () => [
+          {
+            0: { type: 'application/pdf', suffixes: 'pdf', description: 'Portable Document Format', enabledPlugin: {} },
+            description: 'Portable Document Format',
+            filename: 'internal-pdf-viewer',
+            length: 1,
+            name: 'PDF Viewer',
+          },
+          {
+            0: { type: 'application/x-google-chrome-pdf', suffixes: 'pdf', description: 'Portable Document Format', enabledPlugin: {} },
+            description: 'Portable Document Format',
+            filename: 'internal-pdf-viewer',
+            length: 1,
+            name: 'Chrome PDF Viewer',
+          },
+        ],
+      });
+
+      // Override permissions API
+      const originalQuery = window.navigator.permissions.query;
+      window.navigator.permissions.query = (parameters: any) => (
+        parameters.name === 'notifications' 
+          ? Promise.resolve({ state: 'prompt' as PermissionState, onchange: null } as PermissionStatus)
+          : originalQuery(parameters)
+      );
+
+      // Add chrome object for more realistic fingerprint
+      (window as any).chrome = {
+        runtime: {},
+      };
+
+      // Randomize canvas fingerprint
+      const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
+      HTMLCanvasElement.prototype.toDataURL = function(type?: string, ...args: any[]) {
+        const context = this.getContext('2d');
+        if (context) {
+          const imageData = context.getImageData(0, 0, this.width, this.height);
+          // Add minimal noise to avoid consistent fingerprinting
+          for (let i = 0; i < imageData.data.length; i += 4) {
+            imageData.data[i] = imageData.data[i] + Math.floor(Math.random() * 3) - 1;
+          }
+          context.putImageData(imageData, 0, 0);
+        }
+        return originalToDataURL.apply(this, [type, ...args]);
+      };
+    });
+  }
 
   if (BLOCK_MEDIA) {
     await newContext.route('**/*.{png,jpg,jpeg,gif,svg,mp3,mp4,avi,flac,ogg,wav,webm}', async (route: Route, request: PlaywrightRequest) => {
@@ -219,7 +293,7 @@ app.get('/health', async (req: Request, res: Response) => {
 });
 
 app.post('/scrape', async (req: Request, res: Response) => {
-  const { url, wait_after_load = 0, timeout = 15000, headers, check_selector, skip_tls_verification = false }: UrlModel = req.body;
+  const { url, wait_after_load = 0, timeout = 15000, headers, check_selector, skip_tls_verification = false, stealth = false }: UrlModel = req.body;
 
   console.log(`================= Scrape Request =================`);
   console.log(`URL: ${url}`);
@@ -228,6 +302,7 @@ app.post('/scrape', async (req: Request, res: Response) => {
   console.log(`Headers: ${headers ? JSON.stringify(headers) : 'None'}`);
   console.log(`Check Selector: ${check_selector ? check_selector : 'None'}`);
   console.log(`Skip TLS Verification: ${skip_tls_verification}`);
+  console.log(`Stealth Mode: ${stealth}`);
   console.log(`==================================================`);
 
   if (!url) {
@@ -252,7 +327,7 @@ app.post('/scrape', async (req: Request, res: Response) => {
   let page: Page | null = null;
 
   try {
-    requestContext = await createContext(skip_tls_verification);
+    requestContext = await createContext(skip_tls_verification, stealth);
     page = await requestContext.newPage();
 
     if (headers) {
