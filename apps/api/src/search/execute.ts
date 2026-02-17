@@ -13,6 +13,11 @@ import {
   mergeScrapedContent,
   calculateScrapeCredits,
 } from "./scrape";
+import {
+  DomainOverrides,
+  EnforcementSummary,
+  enforceSearchProfile,
+} from "../services/search-profiles";
 
 interface SearchOptions {
   query: string;
@@ -27,6 +32,8 @@ interface SearchOptions {
   enterprise?: ("default" | "anon" | "zdr")[];
   scrapeOptions?: ScrapeOptions;
   timeout: number;
+  profileId?: string;
+  overrides?: DomainOverrides;
 }
 
 interface SearchContext {
@@ -46,6 +53,7 @@ interface SearchExecuteResult {
   scrapeCredits: number;
   totalCredits: number;
   shouldScrape: boolean;
+  enforcementSummary: EnforcementSummary | null;
 }
 
 export async function executeSearch(
@@ -88,15 +96,21 @@ export async function executeSearch(
     enterprise: options.enterprise,
   })) as SearchV2Response;
 
-  if (searchResponse.web && searchResponse.web.length > 0) {
-    searchResponse.web = searchResponse.web.map(result => ({
+  const { response: filteredResponse, summary } = enforceSearchProfile(
+    searchResponse,
+    options.profileId,
+    options.overrides,
+  );
+
+  if (filteredResponse.web && filteredResponse.web.length > 0) {
+    filteredResponse.web = filteredResponse.web.map(result => ({
       ...result,
       category: getCategoryFromUrl(result.url, categoryMap),
     }));
   }
 
-  if (searchResponse.news && searchResponse.news.length > 0) {
-    searchResponse.news = searchResponse.news.map(result => ({
+  if (filteredResponse.news && filteredResponse.news.length > 0) {
+    filteredResponse.news = filteredResponse.news.map(result => ({
       ...result,
       category: result.url
         ? getCategoryFromUrl(result.url, categoryMap)
@@ -106,25 +120,25 @@ export async function executeSearch(
 
   let totalResultsCount = 0;
 
-  if (searchResponse.web && searchResponse.web.length > 0) {
-    if (searchResponse.web.length > limit) {
-      searchResponse.web = searchResponse.web.slice(0, limit);
+  if (filteredResponse.web && filteredResponse.web.length > 0) {
+    if (filteredResponse.web.length > limit) {
+      filteredResponse.web = filteredResponse.web.slice(0, limit);
     }
-    totalResultsCount += searchResponse.web.length;
+    totalResultsCount += filteredResponse.web.length;
   }
 
-  if (searchResponse.images && searchResponse.images.length > 0) {
-    if (searchResponse.images.length > limit) {
-      searchResponse.images = searchResponse.images.slice(0, limit);
+  if (filteredResponse.images && filteredResponse.images.length > 0) {
+    if (filteredResponse.images.length > limit) {
+      filteredResponse.images = filteredResponse.images.slice(0, limit);
     }
-    totalResultsCount += searchResponse.images.length;
+    totalResultsCount += filteredResponse.images.length;
   }
 
-  if (searchResponse.news && searchResponse.news.length > 0) {
-    if (searchResponse.news.length > limit) {
-      searchResponse.news = searchResponse.news.slice(0, limit);
+  if (filteredResponse.news && filteredResponse.news.length > 0) {
+    if (filteredResponse.news.length > limit) {
+      filteredResponse.news = filteredResponse.news.slice(0, limit);
     }
-    totalResultsCount += searchResponse.news.length;
+    totalResultsCount += filteredResponse.news.length;
   }
 
   const isZDR = options.enterprise?.includes("zdr");
@@ -137,7 +151,7 @@ export async function executeSearch(
     scrapeOptions?.formats && scrapeOptions.formats.length > 0;
 
   if (shouldScrape && scrapeOptions) {
-    const itemsToScrape = getItemsToScrape(searchResponse, flags);
+    const itemsToScrape = getItemsToScrape(filteredResponse, flags);
 
     if (itemsToScrape.length > 0) {
       const scrapeOpts = {
@@ -159,7 +173,7 @@ export async function executeSearch(
       );
 
       mergeScrapedContent(
-        searchResponse,
+        filteredResponse,
         itemsToScrape,
         allDocsWithCostTracking,
       );
@@ -168,11 +182,12 @@ export async function executeSearch(
   }
 
   return {
-    response: searchResponse,
+    response: filteredResponse,
     totalResultsCount,
     searchCredits,
     scrapeCredits,
     totalCredits: searchCredits + scrapeCredits,
     shouldScrape: shouldScrape ?? false,
+    enforcementSummary: summary,
   };
 }

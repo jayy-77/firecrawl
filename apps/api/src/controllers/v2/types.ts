@@ -1619,6 +1619,13 @@ export const searchRequestSchema = z
     integration: integrationSchema.optional().transform(val => val || null),
     timeout: z.int().positive().finite().prefault(60000),
     ignoreInvalidURLs: z.boolean().optional().prefault(false),
+    profileId: z.string().max(128).optional(),
+    overrides: z
+      .object({
+        allowedDomains: z.array(z.string()).max(500).optional(),
+        blockedDomains: z.array(z.string()).max(500).optional(),
+      })
+      .optional(),
     asyncScraping: z.boolean().optional().prefault(false),
     __searchPreviewToken: z.string().optional(),
     scrapeOptions: baseScrapeOptions
@@ -1760,6 +1767,7 @@ export type SearchResponse =
       data: import("../../lib/entities").SearchV2Response;
       creditsUsed: number;
       id: string;
+      enforcementSummary?: import("../../services/search-profiles").EnforcementSummary | null;
     }
   | {
       success: true;

@@ -113,6 +113,8 @@ export async function searchController(
         enterprise: req.body.enterprise,
         scrapeOptions: req.body.scrapeOptions,
         timeout: req.body.timeout,
+        profileId: req.body.profileId,
+        overrides: req.body.overrides,
       },
       {
         teamId: req.auth.team_id,
@@ -179,11 +181,27 @@ export async function searchController(
       scrapeful: result.shouldScrape,
     });
 
+    if (result.enforcementSummary) {
+      res.setHeader(
+        "x-search-profile-id",
+        result.enforcementSummary.appliedProfileId ?? "",
+      );
+      res.setHeader(
+        "x-search-profile-version",
+        result.enforcementSummary.profileVersion?.toString() ?? "",
+      );
+      res.setHeader(
+        "x-search-profile-effective-domains",
+        result.enforcementSummary.effectiveDomainCount.toString(),
+      );
+    }
+
     return res.status(200).json({
       success: true,
       data: result.response,
       creditsUsed: result.totalCredits,
       id: jobId,
+      enforcementSummary: result.enforcementSummary,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {

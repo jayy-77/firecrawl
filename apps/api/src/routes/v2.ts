@@ -3,6 +3,11 @@ import { config } from "../config";
 import { RateLimiterMode } from "../types";
 import expressWs from "express-ws";
 import { searchController } from "../controllers/v2/search";
+import {
+  createSearchProfileController,
+  getSearchProfileController,
+  updateSearchProfileController,
+} from "../controllers/v2/search-profiles";
 import { x402SearchController } from "../controllers/v2/x402-search";
 import { scrapeController } from "../controllers/v2/scrape";
 import { batchScrapeController } from "../controllers/v2/batch-scrape";
@@ -179,6 +184,24 @@ v2Router.post(
   checkCreditsMiddleware(),
   blocklistMiddleware,
   wrap(searchController),
+);
+
+v2Router.post(
+  "/search-profiles",
+  authMiddleware(RateLimiterMode.Search),
+  wrap(createSearchProfileController),
+);
+
+v2Router.put(
+  "/search-profiles/:id",
+  authMiddleware(RateLimiterMode.Search),
+  wrap(updateSearchProfileController),
+);
+
+v2Router.get(
+  "/search-profiles/:id",
+  authMiddleware(RateLimiterMode.Search),
+  wrap(getSearchProfileController),
 );
 
 v2Router.post(
